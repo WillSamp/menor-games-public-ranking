@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-04-21
+
+### Pontuacao por palavra valida e sync imediato no ranking
+
+- Arquivos alterados:
+  - `src/main.js`
+  - `CHANGELOG.md`
+
+- Mudancas realizadas:
+  - Regra de pontuacao ajustada para conceder `+50 pontos` em toda palavra valida no dicionario, seja palavra da fase ou palavra extra.
+  - Validacao de envio passou a exigir existencia no dicionario antes de aceitar pontuacao.
+  - Correcao de sincronizacao: sempre que pontua, o jogo sincroniza imediatamente com o backend para refletir no ranking sem esperar o ciclo de 2 minutos.
+  - Mensagens de feedback ajustadas para mostrar ganho de pontos em palavras da fase e bonus.
+
+- Resultado esperado:
+  - Ranking atualizado rapidamente apos cada palavra pontuada.
+  - Regra unica e previsivel de pontuacao para palavras validas no dicionario.
+
+- Validacao:
+  - Build web compilando sem erros (`npm.cmd run build`).
+
+### QA publico consolidado no Render (ranking + amigos)
+
+- Arquivos alterados:
+  - `WORKFLOW-RULES.md`
+  - `README.md`
+  - `src/main.js`
+  - `CHANGELOG.md`
+
+- Mudancas realizadas:
+  - Regra de testes publicos adicionada na documentacao para garantir funcionamento em 2 Androids diferentes.
+  - Documentado que ranking e amigos devem funcionar juntos de forma publica via Render.
+  - README atualizado com fluxo de amigos por ID e criterio de ranking por pontos.
+  - Fallback da API no frontend fixado para `https://menor-games-public-ranking.onrender.com` quando variavel de ambiente nao estiver definida.
+
+- Resultado esperado:
+  - Ambiente de QA mais previsivel, evitando fallback local acidental durante testes multi-dispositivo.
+
+- Validacao:
+  - Regras e orientacoes atualizadas nos markdowns do projeto.
+
 ## 2026-04-19
 
 ### Bonus com dicionario completo de portugues

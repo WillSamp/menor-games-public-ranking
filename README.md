@@ -48,6 +48,20 @@ Observacoes:
 
 - O top 10 agora vem do servidor (sem bots locais).
 - Cada ID de conta e atualizado (upsert), sem duplicar jogador quando ele muda nome.
+- O ranking e ordenado por pontos (desempate por fase e atualizacao).
+
+## Amigos (publico, por ID)
+
+- Tela de amigos permite adicionar por ID.
+- A listagem de amigos mostra nome, fase e pontos.
+- O fluxo de amigos usa o mesmo backend publico do ranking.
+
+## Regra atual de QA publico (2 Androids)
+
+- Para os testes entre dispositivos diferentes, manter tudo apontando para Render.
+- URL oficial de testes publicos:
+	- `https://menor-games-public-ranking.onrender.com`
+- Nao depender de tunel temporario para validar ranking/amigos no card de QA.
 
 ## Backend publico (teste entre voces)
 

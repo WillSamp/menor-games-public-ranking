@@ -12,6 +12,17 @@
 
 Garantir feedback visual rapido em toda alteracao e reduzir regressao de interface/gameplay.
 
+## Regra de teste publico (Render)
+
+- Durante os testes funcionais deste projeto, ranking e amigos devem funcionar publicamente para uso em dispositivos diferentes (incluindo 2 Androids em redes diferentes).
+- O endpoint padrao para testes deve permanecer no Render: `https://menor-games-public-ranking.onrender.com`.
+- Fluxos obrigatorios no teste publico:
+	- sincronizacao automatica por ID
+	- ranking global por pontos
+	- adicionar amigo por ID
+	- listar amigos com nome, fase e pontos
+- Evitar dependencias de tunel temporario para o fluxo principal de QA publico.
+
 ## Registro obrigatorio de mudancas
 
 - Sempre que qualquer alteracao for feita, registrar o que foi alterado em `CHANGELOG.md` na secao da data atual.

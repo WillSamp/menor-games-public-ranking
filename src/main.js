@@ -39,12 +39,13 @@ const PHASE_COMPLETE_COINS = 50;
 const BASIC_HINT_COST = 500;
 const PREMIUM_HINT_PACK_COST = 20;
 const PREMIUM_HINT_PACK_AMOUNT = 5;
-const BONUS_WORD_COINS = 50;
+const BONUS_WORD_POINTS = 50;
 const PROGRESS_STORAGE_KEY = "menor-games-progress-v1";
 const SYNC_INTERVAL_MS = 2 * 60 * 1000;
+const DEFAULT_PUBLIC_API_URL = "https://menor-games-public-ranking.onrender.com";
 const API_BASE_URL = typeof window !== "undefined"
-  ? ((import.meta.env.VITE_RANKING_API_URL || "").trim() || `${window.location.protocol}//${window.location.hostname || "localhost"}:8787`)
-  : "http://localhost:8787";
+  ? ((import.meta.env.VITE_RANKING_API_URL || "").trim() || DEFAULT_PUBLIC_API_URL)
+  : DEFAULT_PUBLIC_API_URL;
 const PROFILE_AVATARS = ["🦊", "🐼", "🐸", "🐯", "🐧", "🐙", "🐵", "🦁", "🐨", "🐻"];
 const PROFILE_COLORS = ["#ffcf66", "#8fd8ff", "#a9f0b2", "#ffc8d6", "#c9c5ff", "#ffb980", "#9fe9df"];
 const PROFILE_NAME_PREFIXES = ["Cap", "Mestre", "Turbo", "Ninja", "Super", "Mega", "Ultra", "Brabo", "Lenda", "Pulo"];
@@ -168,6 +169,7 @@ const BONUS_DICTIONARY_WORDS = new Set(BONUS_DICTIONARY_MAP.keys());
 
 const state = {
   phase: 1,
+  points: 0,
   hints: 5,
   basicCoins: 0,
   premiumCoins: 0,
@@ -176,6 +178,7 @@ const state = {
   vibrationEnabled: false,
   profile: null,
   onlineLeaderboard: [],
+  friendsLeaderboard: [],
   phaseSessions: {},
   bonusWords: new Set(),
   activePointerId: null,
@@ -220,6 +223,7 @@ app.innerHTML = `
           </button>
           <button id="menu-settings-btn" class="menu-icon-btn" type="button" aria-label="Configurações do menu">⚙</button>
           <button id="menu-leaderboard-btn" class="menu-icon-btn" type="button" aria-label="Abrir ranking">🏆</button>
+          <button id="menu-friends-btn" class="menu-icon-btn" type="button" aria-label="Abrir amigos">👥</button>
         </div>
       </div>
 
@@ -447,6 +451,24 @@ app.innerHTML = `
         </div>
       </article>
     </section>
+
+    <section class="overlay hidden" id="friends-overlay" role="dialog" aria-modal="true">
+      <article class="leaderboard-sheet">
+        <div class="leaderboard-sheet-header">
+          <button id="friends-close" class="leaderboard-sheet-close" type="button" aria-label="Fechar">←</button>
+          <span>AMIGOS</span>
+        </div>
+        <div class="leaderboard-sheet-body">
+          <p class="leaderboard-title">Adicionar por ID</p>
+          <div class="profile-name-controls">
+            <input id="friends-id-input" class="profile-name-input" type="text" maxlength="16" placeholder="Ex.: MG-12345" />
+            <button id="friends-add-btn" class="profile-save-name" type="button">Adicionar</button>
+          </div>
+          <p class="leaderboard-title" style="margin-top:12px;">Meus amigos</p>
+          <ul id="friends-list" class="leaderboard-list"></ul>
+        </div>
+      </article>
+    </section>
   </main>
 `;
 
@@ -456,6 +478,7 @@ const menuScreen = document.querySelector("#menu-screen");
 const phaseSelectScreen = document.querySelector("#phase-select-screen");
 const menuStoreBtn = document.querySelector("#menu-store-btn");
 const menuLeaderboardBtn = document.querySelector("#menu-leaderboard-btn");
+const menuFriendsBtn = document.querySelector("#menu-friends-btn");
 const menuProfileBtn = document.querySelector("#menu-profile-btn");
 const menuProfileAvatar = document.querySelector("#menu-profile-avatar");
 const menuSettingsBtn = document.querySelector("#menu-settings-btn");
@@ -522,6 +545,12 @@ const avatarGrid = document.querySelector("#avatar-grid");
 const leaderboardOverlay = document.querySelector("#leaderboard-overlay");
 const leaderboardClose = document.querySelector("#leaderboard-close");
 const leaderboardList = document.querySelector("#leaderboard-list");
+
+const friendsOverlay = document.querySelector("#friends-overlay");
+const friendsClose = document.querySelector("#friends-close");
+const friendsIdInput = document.querySelector("#friends-id-input");
+const friendsAddBtn = document.querySelector("#friends-add-btn");
+const friendsList = document.querySelector("#friends-list");
 
 let isStartingPhase = false;
 let audioContext = null;
@@ -629,7 +658,10 @@ function applyServerUser(serverUser) {
   state.profile.avatarColor = PROFILE_COLORS.includes(serverUser.avatarColor) ? serverUser.avatarColor : state.profile.avatarColor;
 
   const nextPhase = Math.max(1, Math.min(TOTAL_PHASES, Number.parseInt(String(serverUser.phase), 10) || state.phase));
+  const parsedPoints = Number.parseInt(String(serverUser.points), 10);
   state.phase = nextPhase;
+  // Usa Math.max para nunca deixar resposta atrasada de sync sobrescrever pontos ja acumulados localmente.
+  state.points = Number.isFinite(parsedPoints) ? Math.max(state.points, parsedPoints) : state.points;
   menuPhase.textContent = `Fase atual: ${state.phase}/${TOTAL_PHASES}`;
   phasePicker.value = String(state.phase);
 }
@@ -665,14 +697,20 @@ async function syncCurrentPhaseToServer({ silent = true } = {}) {
         avatar: state.profile.avatar,
         avatarColor: state.profile.avatarColor,
         phase: state.phase,
+        points: state.points,
       },
     });
 
     applyServerUser(payload?.player);
     saveProgress();
+    updateHud();
     const hhmm = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     setSyncStatus(`Última sync: ${hhmm}`);
     await refreshLeaderboard({ silent: true });
+    // Repinta o overlay de ranking se estiver aberto, agora com dados atualizados do servidor.
+    if (!leaderboardOverlay.classList.contains("hidden")) {
+      renderLeaderboardOverlay();
+    }
   } catch (error) {
     setSyncStatus("Sem conexão com o ranking online.", true);
     if (!silent) {
@@ -683,6 +721,40 @@ async function syncCurrentPhaseToServer({ silent = true } = {}) {
 
 async function saveProfileOnServer() {
   await syncCurrentPhaseToServer({ silent: true });
+}
+
+async function refreshFriendsList({ silent = false } = {}) {
+  try {
+    const payload = await apiRequest(`/api/public/friends/${encodeURIComponent(state.profile.id)}`);
+    state.friendsLeaderboard = Array.isArray(payload?.friends) ? payload.friends : [];
+    if (!silent && friendsOverlay && !friendsOverlay.classList.contains("hidden")) {
+      renderFriendsOverlay();
+    }
+  } catch (error) {
+    if (!silent) {
+      messageEl.textContent = String(error?.message || "Falha ao atualizar lista de amigos.");
+    }
+  }
+}
+
+async function addFriendById(friendId) {
+  const cleanFriendId = String(friendId || "").trim().slice(0, 16);
+  if (!cleanFriendId) {
+    messageEl.textContent = "Digite um ID de amigo para adicionar.";
+    return;
+  }
+
+  await apiRequest("/api/public/friends/add", {
+    method: "POST",
+    body: {
+      id: state.profile.id,
+      friendId: cleanFriendId,
+    },
+  });
+
+  await refreshFriendsList({ silent: true });
+  renderFriendsOverlay();
+  messageEl.textContent = `Amizade criada com ${cleanFriendId}.`;
 }
 
 function syncBackgroundMusicPlayback() {
@@ -819,6 +891,7 @@ function parseProgress(raw) {
 
   return {
     phase: Math.max(1, Math.min(TOTAL_PHASES, Number.parseInt(String(raw.phase), 10) || 1)),
+    points: Math.max(0, Number.parseInt(String(raw.points), 10) || 0),
     hints: Math.max(0, Number.parseInt(String(raw.hints), 10) || 5),
     basicCoins: Math.max(0, Number.parseInt(String(raw.basicCoins), 10) || 0),
     premiumCoins: Math.max(0, Number.parseInt(String(raw.premiumCoins), 10) || 0),
@@ -850,6 +923,7 @@ function loadProgress() {
     }
 
     state.phase = parsed.phase;
+    state.points = parsed.points;
     state.hints = parsed.hints;
     state.basicCoins = parsed.basicCoins;
     state.premiumCoins = parsed.premiumCoins;
@@ -867,6 +941,7 @@ function saveProgress() {
   try {
     localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify({
       phase: state.phase,
+      points: state.points,
       hints: state.hints,
       basicCoins: state.basicCoins,
       premiumCoins: state.premiumCoins,
@@ -1973,6 +2048,9 @@ function updateHud() {
   if (!leaderboardOverlay.classList.contains("hidden")) {
     renderLeaderboardOverlay();
   }
+  if (!friendsOverlay.classList.contains("hidden")) {
+    renderFriendsOverlay();
+  }
 }
 
 function getLeaderboardEntries() {
@@ -1982,6 +2060,7 @@ function getLeaderboardEntries() {
     avatar: state.profile.avatar,
     avatarColor: state.profile.avatarColor,
     phase: state.phase,
+    points: state.points,
     isPlayer: true,
   };
 
@@ -1996,9 +2075,19 @@ function getLeaderboardEntries() {
       avatar: entry.avatar,
       avatarColor: entry.avatarColor,
       phase: Math.max(1, Math.min(TOTAL_PHASES, Number.parseInt(String(entry.phase), 10) || 1)),
+      points: Math.max(0, Number.parseInt(String(entry.points), 10) || 0),
       isPlayer: entry.id === state.profile.id,
     }))
-    .sort((a, b) => b.phase - a.phase)
+    .sort((a, b) => {
+      if (b.points !== a.points) {
+        return b.points - a.points;
+      }
+      if (b.phase !== a.phase) {
+        return b.phase - a.phase;
+      }
+
+      return a.name.localeCompare(b.name, "pt-BR");
+    })
     .slice(0, 10);
 }
 
@@ -2019,12 +2108,45 @@ function renderLeaderboardOverlay() {
         <span class="leaderboard-rank">#${idx + 1}</span>
         <span class="leaderboard-avatar" style="background:${entry.avatarColor}">${entry.avatar}</span>
         <span class="leaderboard-name">${entry.name}${entry.isPlayer ? " (Você)" : ""}</span>
-        <span class="leaderboard-phase">Fase ${entry.phase}</span>
+        <span class="leaderboard-phase">Fase ${entry.phase} · ${entry.points} pts</span>
       </li>
     `)
     .join("");
 
   leaderboardList.innerHTML = rows;
+}
+
+function renderFriendsOverlay() {
+  const rows = state.friendsLeaderboard
+    .map((entry) => ({
+      id: String(entry.id || "").slice(0, 16),
+      name: String(entry.name || "Jogador").slice(0, 22),
+      avatar: String(entry.avatar || "🙂").slice(0, 4),
+      avatarColor: String(entry.avatarColor || "#8fd8ff"),
+      phase: Math.max(1, Math.min(TOTAL_PHASES, Number.parseInt(String(entry.phase), 10) || 1)),
+      points: Math.max(0, Number.parseInt(String(entry.points), 10) || 0),
+    }))
+    .sort((a, b) => {
+      if (b.points !== a.points) {
+        return b.points - a.points;
+      }
+      if (b.phase !== a.phase) {
+        return b.phase - a.phase;
+      }
+
+      return a.name.localeCompare(b.name, "pt-BR");
+    })
+    .map((entry) => `
+      <li class="leaderboard-item">
+        <span class="leaderboard-rank">ID</span>
+        <span class="leaderboard-avatar" style="background:${entry.avatarColor}">${entry.avatar}</span>
+        <span class="leaderboard-name">${entry.name}</span>
+        <span class="leaderboard-phase">Fase ${entry.phase} · ${entry.points} pts</span>
+      </li>
+    `)
+    .join("");
+
+  friendsList.innerHTML = rows || "<li class=\"leaderboard-item\"><span class=\"leaderboard-name\">Nenhum amigo adicionado ainda.</span></li>";
 }
 
 function renderAvatarPicker() {
@@ -2072,6 +2194,16 @@ function openLeaderboardOverlay() {
 
 function closeLeaderboardOverlay() {
   leaderboardOverlay.classList.add("hidden");
+}
+
+function openFriendsOverlay() {
+  renderFriendsOverlay();
+  friendsOverlay.classList.remove("hidden");
+  void refreshFriendsList({ silent: true });
+}
+
+function closeFriendsOverlay() {
+  friendsOverlay.classList.add("hidden");
 }
 
 function closeWinOverlay() {
@@ -2570,31 +2702,31 @@ function submitWord() {
 
   const matchedWord = resolveWordCandidate(candidate);
   const displayWord = matchedWord?.displayText || matchedWord?.text || candidate;
+  const normalizedCandidate = toUpperAscii(candidate);
+  const dictionaryDisplayWord = BONUS_DICTIONARY_MAP.get(normalizedCandidate) || normalizedCandidate;
+
+  if (!BONUS_DICTIONARY_WORDS.has(normalizedCandidate)) {
+    messageEl.textContent = `"${candidate}" não existe no dicionário.`;
+    playSfx("error");
+    clearSelection({ keepMessage: true });
+    return;
+  }
 
   if (!matchedWord) {
-    const normalizedCandidate = toUpperAscii(candidate);
-    const bonusDisplayWord = BONUS_DICTIONARY_MAP.get(normalizedCandidate) || normalizedCandidate;
-
-    if (BONUS_DICTIONARY_WORDS.has(normalizedCandidate) && isEligibleBonusWord(normalizedCandidate, bonusDisplayWord)) {
-      if (!state.bonusWords.has(normalizedCandidate)) {
-        state.bonusWords.add(normalizedCandidate);
-        state.basicCoins += BONUS_WORD_COINS;
-        saveCurrentPhaseSession();
-        updateHud();
-        messageEl.textContent = `BÔNUS palavra extra ${bonusDisplayWord}: + ${BONUS_WORD_COINS} moedas.`;
-        messageEl.classList.add("bonus");
-        playSfx("bonus");
-      } else {
-        messageEl.textContent = `Bônus já recebido para ${bonusDisplayWord} nesta fase.`;
-        playSfx("error");
-      }
-
-      clearSelection({ keepMessage: true });
-      return;
+    if (!state.bonusWords.has(normalizedCandidate)) {
+      state.bonusWords.add(normalizedCandidate);
+      state.points += BONUS_WORD_POINTS;
+      saveCurrentPhaseSession();
+      updateHud();
+      void syncCurrentPhaseToServer({ silent: true });
+      messageEl.textContent = `BÔNUS palavra extra ${dictionaryDisplayWord}: +${BONUS_WORD_POINTS} pontos.`;
+      messageEl.classList.add("bonus");
+      playSfx("bonus");
+    } else {
+      messageEl.textContent = `Bônus já recebido para ${dictionaryDisplayWord} nesta fase.`;
+      playSfx("error");
     }
 
-    messageEl.textContent = `"${candidate}" não pertence à fase.`;
-    playSfx("error");
     clearSelection({ keepMessage: true });
     return;
   }
@@ -2607,9 +2739,11 @@ function submitWord() {
   }
 
   state.foundWords.add(matchedWord.text);
+  state.points += BONUS_WORD_POINTS;
   saveCurrentPhaseSession();
   renderBoard();
   clearSelection({ keepMessage: true });
+  void syncCurrentPhaseToServer({ silent: true });
 
   const found = state.foundWords.size;
   const total = state.currentPuzzle.words.length;
@@ -2617,13 +2751,13 @@ function submitWord() {
   if (found === total) {
     const reward = applyPhaseCompletionRewards();
     winText.textContent = `Fase ${state.phase} concluída. Vamos para a próxima!`;
-    messageEl.textContent = `Parabéns! +${reward.coinsAwarded} moedas.`;
+    messageEl.textContent = `Parabéns! +${BONUS_WORD_POINTS} pontos e +${reward.coinsAwarded} moedas.`;
     playSfx("win");
     winOverlay.classList.remove("hidden");
     return;
   }
 
-  messageEl.textContent = `${displayWord} encontrada. ${found}/${total} palavras.`;
+  messageEl.textContent = `${displayWord} encontrada: +${BONUS_WORD_POINTS} pontos. ${found}/${total} palavras.`;
   playSfx("success");
 }
 
@@ -2707,6 +2841,7 @@ menuExitBtn.addEventListener("click", () => {
 });
 menuStoreBtn.addEventListener("click", openStoreOverlay);
 menuLeaderboardBtn.addEventListener("click", openLeaderboardOverlay);
+menuFriendsBtn.addEventListener("click", openFriendsOverlay);
 menuProfileBtn.addEventListener("click", openProfileOverlay);
 menuSettingsBtn.addEventListener("click", openSettingsOverlay);
 phaseBackBtn.addEventListener("click", showMenu);
@@ -2849,6 +2984,34 @@ leaderboardClose.addEventListener("click", closeLeaderboardOverlay);
 leaderboardOverlay.addEventListener("click", (event) => {
   if (event.target === leaderboardOverlay) {
     closeLeaderboardOverlay();
+  }
+});
+
+friendsClose.addEventListener("click", closeFriendsOverlay);
+friendsAddBtn.addEventListener("click", async () => {
+  try {
+    await addFriendById(friendsIdInput.value);
+    friendsIdInput.value = "";
+  } catch (error) {
+    messageEl.textContent = String(error?.message || "Falha ao adicionar amigo.");
+  }
+});
+friendsIdInput.addEventListener("keydown", async (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+
+  event.preventDefault();
+  try {
+    await addFriendById(friendsIdInput.value);
+    friendsIdInput.value = "";
+  } catch (error) {
+    messageEl.textContent = String(error?.message || "Falha ao adicionar amigo.");
+  }
+});
+friendsOverlay.addEventListener("click", (event) => {
+  if (event.target === friendsOverlay) {
+    closeFriendsOverlay();
   }
 });
 
