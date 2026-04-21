@@ -105,6 +105,16 @@ function normalizeDbShape(raw) {
   };
 }
 
+// IDs criados durante testes de desenvolvimento — removidos automaticamente no boot.
+const CLEANUP_TEST_IDS = new Set([
+  "TEST-POINTS-01",
+  "NEWCHECK-999",
+  "RENDER-NEWCODE",
+  "CHK-01",
+  "NODE-CHECK",
+  "CHK-02",
+]);
+
 async function loadStore() {
   try {
     await fs.mkdir(DATA_DIR, { recursive: true });
@@ -117,6 +127,14 @@ async function loadStore() {
     }
 
     throw error;
+  }
+
+  // Migração: remove IDs de teste e persiste imediatamente.
+  const before = store.users.length;
+  store.users = store.users.filter((u) => !CLEANUP_TEST_IDS.has(u.id));
+  if (store.users.length !== before) {
+    await saveStore();
+    console.log(`[migração] ${before - store.users.length} ID(s) de teste removidos.`);
   }
 }
 

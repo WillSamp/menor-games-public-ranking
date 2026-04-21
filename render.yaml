@@ -7,6 +7,7 @@ services:
     rootDir: .
     buildCommand: npm install
     startCommand: npm run start:api
+    autoDeploy: yes
     envVars:
       - key: NODE_VERSION
         value: 20
