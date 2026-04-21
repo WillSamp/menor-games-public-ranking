@@ -1,0 +1,31 @@
+{
+  "users": [
+    {
+      "id": "MG-TEST01",
+      "name": "Teste",
+      "avatar": "??",
+      "avatarColor": "#8fd8ff",
+      "phase": 12,
+      "createdAt": 1776734420038,
+      "updatedAt": 1776734420038
+    },
+    {
+      "id": "MG-1LWXF3",
+      "name": "Will",
+      "avatar": "🐻",
+      "avatarColor": "#8fd8ff",
+      "phase": 1,
+      "createdAt": 1776734464223,
+      "updatedAt": 1776735904531
+    },
+    {
+      "id": "MG-RETRY01",
+      "name": "Retry",
+      "avatar": "??",
+      "avatarColor": "#8fd8ff",
+      "phase": 7,
+      "createdAt": 1776735822082,
+      "updatedAt": 1776735822082
+    }
+  ]
+}

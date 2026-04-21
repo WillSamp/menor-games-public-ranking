@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: menor-games-ranking-api
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm run start:api
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: DATA_DIR
+        value: /var/data/menor-games
+    healthCheckPath: /api/health
+    disk:
+      name: menor-games-db
+      mountPath: /var/data
+      sizeGB: 1

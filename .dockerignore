@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log*
+.vscode
+.git
+.gitignore
+dist
+android
+MenorGames-debug.apk
+MenorGames-release.aab

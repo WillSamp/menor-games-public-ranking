@@ -1,0 +1,11 @@
+{
+  "appId": "com.menorgames.app",
+  "appName": "Menor Games",
+  "webDir": "dist",
+  "plugins": {
+    "StatusBar": {
+      "overlaysWebView": true,
+      "style": "LIGHT"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY . .
+
+ENV NODE_ENV=production
+ENV PORT=8787
+ENV DATA_DIR=/app/server
+
+EXPOSE 8787
+
+CMD ["npm", "run", "start:api"]
