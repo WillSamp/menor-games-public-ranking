@@ -1704,6 +1704,10 @@ body.is-loader-active .screen::before {
   border: 1px solid #e7eef6;
 }
 
+.friend-request-item {
+  grid-template-columns: 34px 36px minmax(78px, 1fr) auto auto;
+}
+
 .leaderboard-item.you {
   border-color: #ffc107;
   background: #fff9e6;
@@ -1733,6 +1737,32 @@ body.is-loader-active .screen::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.friend-request-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.friend-request-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 9px;
+  font-family: "Nunito", sans-serif;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.14);
+}
+
+.friend-request-btn.accept {
+  color: #0b5d34;
+  background: linear-gradient(180deg, #c2f7d9 0%, #9beebf 65%, #67dd9f 100%);
+}
+
+.friend-request-btn.reject {
+  color: #7a1f1f;
+  background: linear-gradient(180deg, #ffd1d1 0%, #ffabab 65%, #ff8a8a 100%);
 }
 
 @media (max-width: 640px) {

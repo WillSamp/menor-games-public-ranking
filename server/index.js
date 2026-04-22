@@ -70,6 +70,10 @@ function sanitizeFriendIds(value) {
   return Array.from(uniq).slice(0, 200);
 }
 
+function sanitizePendingFriendRequestIds(value) {
+  return sanitizeFriendIds(value);
+}
+
 function normalizeUser(rawUser) {
   const id = sanitizeId(rawUser?.id);
   if (!id || id.length < 5) {
@@ -88,6 +92,7 @@ function normalizeUser(rawUser) {
     phase: sanitizePhase(rawUser?.phase),
     points: sanitizePoints(rawUser?.points),
     friends: sanitizeFriendIds(rawUser?.friends).filter((friendId) => friendId !== id),
+    pendingFriendRequests: sanitizePendingFriendRequestIds(rawUser?.pendingFriendRequests).filter((requestId) => requestId !== id),
     createdAt: Number.isFinite(createdAtRaw) ? createdAtRaw : now,
     updatedAt: Number.isFinite(updatedAtRaw) ? updatedAtRaw : now,
   };
@@ -167,6 +172,7 @@ function ensureUserById(id, now = Date.now()) {
       phase: 1,
       points: 0,
       friends: [],
+      pendingFriendRequests: [],
       createdAt: now,
       updatedAt: now,
     };
@@ -175,6 +181,9 @@ function ensureUserById(id, now = Date.now()) {
 
   if (!Array.isArray(user.friends)) {
     user.friends = [];
+  }
+  if (!Array.isArray(user.pendingFriendRequests)) {
+    user.pendingFriendRequests = [];
   }
   user.points = sanitizePoints(user.points);
   user.phase = sanitizePhase(user.phase);
@@ -231,21 +240,83 @@ app.post("/api/public/friends/add", async (req, res) => {
     return res.status(404).json({ error: "ID do amigo não encontrado." });
   }
 
-  if (!user.friends.includes(friendId)) {
-    user.friends.push(friendId);
+  if (!Array.isArray(friend.pendingFriendRequests)) {
+    friend.pendingFriendRequests = [];
   }
-  if (!Array.isArray(friend.friends)) {
-    friend.friends = [];
+
+  if (user.friends.includes(friendId) || friend.friends.includes(id)) {
+    return res.status(400).json({ error: "Esse jogador já está na sua lista de amigos." });
   }
-  if (!friend.friends.includes(id)) {
-    friend.friends.push(id);
+
+  if (friend.pendingFriendRequests.includes(id)) {
+    return res.status(400).json({ error: "Pedido já enviado para esse jogador." });
   }
+
+  friend.pendingFriendRequests.push(id);
 
   user.updatedAt = now;
   friend.updatedAt = now;
 
   await saveStore();
-  return res.json({ ok: true });
+  return res.json({ ok: true, status: "pending" });
+});
+
+app.post("/api/public/friends/respond", async (req, res) => {
+  const id = sanitizeId(req.body?.id);
+  const requesterId = sanitizeId(req.body?.requesterId);
+  const accept = !!req.body?.accept;
+
+  if (!id || id.length < 5 || !requesterId || requesterId.length < 5) {
+    return res.status(400).json({ error: "IDs inválidos para resposta de amizade." });
+  }
+
+  if (id === requesterId) {
+    return res.status(400).json({ error: "Operação inválida." });
+  }
+
+  const now = Date.now();
+  const user = ensureUserById(id, now);
+  const requester = store.users.find((entry) => entry.id === requesterId);
+
+  if (!requester) {
+    user.pendingFriendRequests = user.pendingFriendRequests.filter((entryId) => entryId !== requesterId);
+    user.updatedAt = now;
+    await saveStore();
+    return res.status(404).json({ error: "Solicitação expirada: jogador não encontrado." });
+  }
+
+  if (!Array.isArray(user.pendingFriendRequests)) {
+    user.pendingFriendRequests = [];
+  }
+
+  const hadPendingRequest = user.pendingFriendRequests.includes(requesterId);
+  if (!hadPendingRequest) {
+    return res.status(404).json({ error: "Pedido de amizade não encontrado." });
+  }
+
+  user.pendingFriendRequests = user.pendingFriendRequests.filter((entryId) => entryId !== requesterId);
+
+  if (accept) {
+    if (!Array.isArray(user.friends)) {
+      user.friends = [];
+    }
+    if (!Array.isArray(requester.friends)) {
+      requester.friends = [];
+    }
+
+    if (!user.friends.includes(requesterId)) {
+      user.friends.push(requesterId);
+    }
+    if (!requester.friends.includes(id)) {
+      requester.friends.push(id);
+    }
+  }
+
+  user.updatedAt = now;
+  requester.updatedAt = now;
+
+  await saveStore();
+  return res.json({ ok: true, status: accept ? "accepted" : "rejected" });
 });
 
 app.get("/api/public/friends/:id", (req, res) => {
@@ -256,10 +327,11 @@ app.get("/api/public/friends/:id", (req, res) => {
 
   const user = store.users.find((entry) => entry.id === id);
   if (!user) {
-    return res.json({ friends: [] });
+    return res.json({ friends: [], pendingRequests: [] });
   }
 
   const friendIds = Array.isArray(user.friends) ? user.friends : [];
+  const pendingRequestIds = Array.isArray(user.pendingFriendRequests) ? user.pendingFriendRequests : [];
   const friends = friendIds
     .map((friendId) => store.users.find((entry) => entry.id === friendId))
     .filter((entry) => !!entry)
@@ -275,7 +347,13 @@ app.get("/api/public/friends/:id", (req, res) => {
       return b.updatedAt - a.updatedAt;
     });
 
-  return res.json({ friends });
+  const pendingRequests = pendingRequestIds
+    .map((requestId) => store.users.find((entry) => entry.id === requestId))
+    .filter((entry) => !!entry)
+    .map((entry) => toPublicUser(entry))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+
+  return res.json({ friends, pendingRequests });
 });
 
 app.get("/api/leaderboard", (_req, res) => {

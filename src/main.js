@@ -179,6 +179,7 @@ const state = {
   profile: null,
   onlineLeaderboard: [],
   friendsLeaderboard: [],
+  friendRequests: [],
   phaseSessions: {},
   bonusWords: new Set(),
   activePointerId: null,
@@ -464,6 +465,8 @@ app.innerHTML = `
             <input id="friends-id-input" class="profile-name-input" type="text" maxlength="16" placeholder="Ex.: MG-12345" />
             <button id="friends-add-btn" class="profile-save-name" type="button">Adicionar</button>
           </div>
+          <p class="leaderboard-title" style="margin-top:12px;">Pedidos para você</p>
+          <ul id="friends-requests-list" class="leaderboard-list"></ul>
           <p class="leaderboard-title" style="margin-top:12px;">Meus amigos</p>
           <ul id="friends-list" class="leaderboard-list"></ul>
         </div>
@@ -550,6 +553,7 @@ const friendsOverlay = document.querySelector("#friends-overlay");
 const friendsClose = document.querySelector("#friends-close");
 const friendsIdInput = document.querySelector("#friends-id-input");
 const friendsAddBtn = document.querySelector("#friends-add-btn");
+const friendsRequestsList = document.querySelector("#friends-requests-list");
 const friendsList = document.querySelector("#friends-list");
 
 let isStartingPhase = false;
@@ -727,6 +731,7 @@ async function refreshFriendsList({ silent = false } = {}) {
   try {
     const payload = await apiRequest(`/api/public/friends/${encodeURIComponent(state.profile.id)}`);
     state.friendsLeaderboard = Array.isArray(payload?.friends) ? payload.friends : [];
+    state.friendRequests = Array.isArray(payload?.pendingRequests) ? payload.pendingRequests : [];
     if (!silent && friendsOverlay && !friendsOverlay.classList.contains("hidden")) {
       renderFriendsOverlay();
     }
@@ -754,7 +759,29 @@ async function addFriendById(friendId) {
 
   await refreshFriendsList({ silent: true });
   renderFriendsOverlay();
-  messageEl.textContent = `Amizade criada com ${cleanFriendId}.`;
+  messageEl.textContent = `Pedido de amizade enviado para ${cleanFriendId}.`;
+}
+
+async function respondFriendRequest(requesterId, accept) {
+  const cleanRequesterId = String(requesterId || "").trim().slice(0, 16);
+  if (!cleanRequesterId) {
+    return;
+  }
+
+  await apiRequest("/api/public/friends/respond", {
+    method: "POST",
+    body: {
+      id: state.profile.id,
+      requesterId: cleanRequesterId,
+      accept: !!accept,
+    },
+  });
+
+  await refreshFriendsList({ silent: true });
+  renderFriendsOverlay();
+  messageEl.textContent = accept
+    ? `${cleanRequesterId} agora é seu amigo.`
+    : `Pedido de ${cleanRequesterId} recusado.`;
 }
 
 function syncBackgroundMusicPlayback() {
@@ -2117,6 +2144,39 @@ function renderLeaderboardOverlay() {
 }
 
 function renderFriendsOverlay() {
+  const requestRows = state.friendRequests
+    .map((entry) => ({
+      id: String(entry.id || "").slice(0, 16),
+      name: String(entry.name || "Jogador").slice(0, 22),
+      avatar: String(entry.avatar || "🙂").slice(0, 4),
+      avatarColor: String(entry.avatarColor || "#8fd8ff"),
+      phase: Math.max(1, Math.min(TOTAL_PHASES, Number.parseInt(String(entry.phase), 10) || 1)),
+      points: Math.max(0, Number.parseInt(String(entry.points), 10) || 0),
+    }))
+    .sort((a, b) => {
+      if (b.points !== a.points) {
+        return b.points - a.points;
+      }
+      if (b.phase !== a.phase) {
+        return b.phase - a.phase;
+      }
+
+      return a.name.localeCompare(b.name, "pt-BR");
+    })
+    .map((entry) => `
+      <li class="leaderboard-item friend-request-item">
+        <span class="leaderboard-rank">ID</span>
+        <span class="leaderboard-avatar" style="background:${entry.avatarColor}">${entry.avatar}</span>
+        <span class="leaderboard-name">${entry.name}</span>
+        <span class="leaderboard-phase">Fase ${entry.phase} · ${entry.points} pts</span>
+        <div class="friend-request-actions">
+          <button class="friend-request-btn accept" type="button" data-requester-id="${entry.id}" data-accept="1" aria-label="Aceitar pedido">V</button>
+          <button class="friend-request-btn reject" type="button" data-requester-id="${entry.id}" data-accept="0" aria-label="Recusar pedido">X</button>
+        </div>
+      </li>
+    `)
+    .join("");
+
   const rows = state.friendsLeaderboard
     .map((entry) => ({
       id: String(entry.id || "").slice(0, 16),
@@ -2146,7 +2206,8 @@ function renderFriendsOverlay() {
     `)
     .join("");
 
-  friendsList.innerHTML = rows || "<li class=\"leaderboard-item\"><span class=\"leaderboard-name\">Nenhum amigo adicionado ainda.</span></li>";
+  friendsRequestsList.innerHTML = requestRows;
+  friendsList.innerHTML = rows;
 }
 
 function renderAvatarPicker() {
@@ -2994,6 +3055,25 @@ friendsAddBtn.addEventListener("click", async () => {
     friendsIdInput.value = "";
   } catch (error) {
     messageEl.textContent = String(error?.message || "Falha ao adicionar amigo.");
+  }
+});
+friendsRequestsList.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const button = target.closest(".friend-request-btn");
+  if (!(button instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const requesterId = String(button.dataset.requesterId || "").trim();
+  const shouldAccept = button.dataset.accept === "1";
+  try {
+    await respondFriendRequest(requesterId, shouldAccept);
+  } catch (error) {
+    messageEl.textContent = String(error?.message || "Falha ao responder pedido de amizade.");
   }
 });
 friendsIdInput.addEventListener("keydown", async (event) => {
